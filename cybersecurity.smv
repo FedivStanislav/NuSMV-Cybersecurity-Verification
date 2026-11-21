@@ -1,0 +1,30 @@
+
+MODULE main
+
+VAR
+    state : {monitoring, threat_detected, analyzing, alert, blocked};
+
+ASSIGN
+    init(state) := monitoring;
+
+    next(state) := case
+        state = monitoring : {monitoring, threat_detected};
+        state = threat_detected : analyzing;
+        state = analyzing : {alert, blocked};
+        state = alert : monitoring;
+        state = blocked : monitoring;
+        TRUE : state;
+    esac;
+
+DEFINE
+    threat_active := state = threat_detected |
+                     state = analyzing;
+
+    response_triggered := state = alert |
+                          state = blocked;
+
+CTLSPEC AG !(state = threat_detected & response_triggered)
+
+CTLSPEC AG (state = threat_detected -> AF response_triggered)
+
+LTLSPEC G (state = threat_detected -> F response_triggered)
