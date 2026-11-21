@@ -19,46 +19,56 @@ on:
 
 jobs:
   formal-verification:
-    runs-on: ubuntu-24.04
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: pwsh
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install NuSMV dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxml2
-
       - name: Download NuSMV 2.7.1
         run: |
-          curl -fL -o nusmv.tar.xz \
-            https://nusmv.fbk.eu/distrib/2.7.1/NuSMV-2.7.1-linux64.tar.xz
-          mkdir nusmv
-          tar -xJf nusmv.tar.xz -C nusmv
+          $url = "https://nusmv.fbk.eu/distrib/2.7.1/NuSMV-2.7.1-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile nusmv.zip
+          Expand-Archive -Path nusmv.zip -DestinationPath nusmv
 
       - name: Verify formal properties
         env:
           MODEL: ${{ inputs.model || 'cybersecurity.smv' }}
         run: |
-          set -euo pipefail
+          $ErrorActionPreference = "Stop"
 
-          NUSMV=$(find nusmv -type f -name NuSMV | head -n 1)
-          chmod +x "$NUSMV"
+          $nusmv = Get-ChildItem -Path nusmv -Filter NuSMV.exe -Recurse |
+            Select-Object -First 1
 
-          echo "Checking model: $MODEL"
-          "$NUSMV" "$MODEL" | tee verification.log
+          if (-not $nusmv) {
+            throw "NuSMV.exe not found"
+          }
 
-          if grep -q "is false" verification.log; then
-            echo "VERIFICATION FAILED"
-            exit 1
-          fi
+          if (-not (Test-Path $env:MODEL)) {
+            throw "Model file not found"
+          }
 
-          COUNT=$(grep -c "is true" verification.log || true)
+          Write-Host "Checking model: $env:MODEL"
 
-          if [ "$COUNT" -ne 3 ]; then
-            echo "VERIFICATION ERROR"
-            exit 1
-          fi
+          $output = & $nusmv.FullName $env:MODEL 2>&1 | Out-String
+          Write-Host $output
 
-          echo "VERIFICATION PASSED"
+          if ($LASTEXITCODE -ne 0) {
+            throw "NuSMV execution failed"
+          }
+
+          if ($output -match "is false") {
+            throw "VERIFICATION FAILED"
+          }
+
+          $count = ([regex]::Matches($output, "is true")).Count
+
+          if ($count -ne 3) {
+            throw "VERIFICATION ERROR: Expected 3 properties"
+          }
+
+          Write-Host "VERIFICATION PASSED"
