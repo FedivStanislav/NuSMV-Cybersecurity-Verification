@@ -1,0 +1,59 @@
+
+name: NuSMV Formal Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model to verify"
+        required: true
+        type: choice
+        default: cybersecurity.smv
+        options:
+          - cybersecurity.smv
+          - cybersecurity_error.smv
+
+jobs:
+  formal-verification:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download NuSMV 2.7.1
+        run: |
+          curl -fL -o nusmv.tar.xz \
+            https://nusmv.fbk.eu/distrib/2.7.1/NuSMV-2.7.1-linux64.tar.xz
+          mkdir nusmv
+          tar -xJf nusmv.tar.xz -C nusmv
+
+      - name: Verify formal properties
+        env:
+          MODEL: ${{ inputs.model || 'cybersecurity.smv' }}
+        run: |
+          set -euo pipefail
+
+          NUSMV=$(find nusmv -type f -name NuSMV | head -n 1)
+          chmod +x "$NUSMV"
+
+          echo "Checking model: $MODEL"
+          "$NUSMV" "$MODEL" | tee verification.log
+
+          if grep -q "is false" verification.log; then
+            echo "VERIFICATION FAILED"
+            exit 1
+          fi
+
+          COUNT=$(grep -c "is true" verification.log || true)
+
+          if [ "$COUNT" -ne 3 ]; then
+            echo "VERIFICATION ERROR"
+            exit 1
+          fi
+
+          echo "VERIFICATION PASSED"
